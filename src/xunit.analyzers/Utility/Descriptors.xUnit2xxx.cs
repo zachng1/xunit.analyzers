@@ -269,6 +269,15 @@ public static partial class Descriptors
 			"Do not use Assert.Empty() to check if a value does not exist in a collection. Use Assert.DoesNotContain() instead."
 		);
 
+	public static DiagnosticDescriptor X2030_AssertsWithReturnValuesShouldBeUsedForAssigment { get; } =
+		Diagnostic(
+			"xUnit2030",
+			"Assertion with return values can be used in place of collection extension method",
+			Assertions,
+			Info,
+			"Using {0} as well as {1} is redundant. Use the return of {0} instead."
+		);
+
 	// Placeholder for rule X2030
 
 	// Placeholder for rule X2031
