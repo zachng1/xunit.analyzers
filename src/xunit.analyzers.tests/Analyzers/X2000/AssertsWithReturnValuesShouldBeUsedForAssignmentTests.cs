@@ -19,13 +19,9 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignmentTests
 			void TestMethod() {
 				List<int> collection;
 				int item;
-				int item2;
-				int item3;
-				if (1 ==1) {
-					collection = new List<int> {1};
-					Xunit.Assert.Single(collection);
-					item = collection.Single(); // only this one
-				}
+				collection = new List<int> {1};
+				Xunit.Assert.Single(collection);
+				item = collection.Single(); // only this one
 				item = collection.Single();
 			}
 		}
