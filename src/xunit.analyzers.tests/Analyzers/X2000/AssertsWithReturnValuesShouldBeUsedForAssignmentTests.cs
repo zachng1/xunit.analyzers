@@ -12,20 +12,27 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignmentTests
 	public async Task AssertSingleFollowedByAssignment_Triggers()
 	{
 		var source = @"
-		using System.Collections.Generic;
-		using System.Linq;
+using System.Collections.Generic;
+using System.Linq;
 
-		class TestClass {
-			void TestMethod() {
-				List<int> list;
-				int item;
-				list = new List<int> {1};
-				Xunit.Assert.Single(list);
-				item = list.Single(); // only this one
-				item = list.Single();
-			}
-		}
+class TestClass {
+	void TestMethod() {
+		List<int> list;
+		int item;
+		list = new List<int> {1};
+		Xunit.Assert.Single(list);
+		item = list.Single(); 
+	}
+}
 		";
-		await Verify.VerifyAnalyzer(source);
+		var expected = new[]
+		{
+			Verify
+				.Diagnostic()
+				.WithSpan(11, 3, 11, 23)
+				.WithSeverity(DiagnosticSeverity.Info)
+				.WithArguments("IEnumerable.Single()", Constants.Asserts.Single)
+		};
+		await Verify.VerifyAnalyzer(source, expected);
 	}
 }

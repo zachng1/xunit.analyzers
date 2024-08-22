@@ -119,37 +119,28 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 		{
 			return;
 		}
-		
-		
-		var symbol = semanticModel.GetSymbolInfo(referencesToReplacementCandidates.First().Right).Symbol;
-		if (symbol != null)
-			context.ReportDiagnostic(
-				Diagnostic.Create(
-					Descriptors.X2030_AssertsWithReturnValuesShouldBeUsedForAssigment,
-					referencesToReplacementCandidates.First().GetLocation(),
-					SymbolDisplay.ToDisplayString(
-						method,
-						SymbolDisplayFormat
-							.CSharpShortErrorMessageFormat
-							.WithParameterOptions(SymbolDisplayParameterOptions.None)
-							.WithGenericsOptions(SymbolDisplayGenericsOptions.None)
-					),
-					SymbolDisplay.ToDisplayString(
-						symbol,
-						SymbolDisplayFormat
-							.CSharpShortErrorMessageFormat
-							.WithParameterOptions(SymbolDisplayParameterOptions.None)
-							.WithGenericsOptions(SymbolDisplayGenericsOptions.None)
-					),
-					SymbolDisplay.ToDisplayString(
-						method,
-						SymbolDisplayFormat
-							.CSharpShortErrorMessageFormat
-							.WithParameterOptions(SymbolDisplayParameterOptions.None)
-							.WithGenericsOptions(SymbolDisplayGenericsOptions.None)
+
+		foreach (var assignmentToCollection in referencesToReplacementCandidates)
+		{
+			var symbol = semanticModel.GetSymbolInfo(assignmentToCollection.Right).Symbol;
+			if (symbol != null)
+			{
+				context.ReportDiagnostic(
+					Diagnostic.Create(
+						Descriptors.X2030_AssertsWithReturnValuesShouldBeUsedForAssigment,
+						assignmentToCollection.GetLocation(),
+						SymbolDisplay.ToDisplayString(
+							symbol,
+							SymbolDisplayFormat
+								.CSharpShortErrorMessageFormat
+								.WithParameterOptions(SymbolDisplayParameterOptions.None)
+								.WithGenericsOptions(SymbolDisplayGenericsOptions.None)
+						),
+						Constants.Asserts.Single
 					)
-				)
-			);
+				);
+			}
+		}
 	}
 
 }

@@ -275,7 +275,7 @@ public static partial class Descriptors
 			"Assertion with return values can be used in place of collection extension method",
 			Assertions,
 			Info,
-			"Using {0} as well as {1} is redundant. Use the return of {0} instead."
+			"Using {0} for assignment is redundant when the return value of Assert.{1} can be used instead."
 		);
 
 	// Placeholder for rule X2030
