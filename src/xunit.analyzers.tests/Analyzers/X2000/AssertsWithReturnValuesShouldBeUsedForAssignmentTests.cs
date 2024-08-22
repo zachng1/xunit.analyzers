@@ -17,12 +17,12 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignmentTests
 
 		class TestClass {
 			void TestMethod() {
-				List<int> collection;
+				List<int> list;
 				int item;
-				collection = new List<int> {1};
-				Xunit.Assert.Single(collection);
-				item = collection.Single(); // only this one
-				item = collection.Single();
+				list = new List<int> {1};
+				Xunit.Assert.Single(list);
+				item = list.Single(); // only this one
+				item = list.Single();
 			}
 		}
 		";

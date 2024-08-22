@@ -46,13 +46,15 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 		if (method.Name == Constants.Asserts.Single)
 		{
 			var invocationNode = invocationOperation.Syntax;
-			var collectionParameter = method.Parameters[0]; // will have to make this a sensible value for things that take more than 1 param
-			ProcessXunitSingle(invocationNode, semanticModel, collectionParameter, context, method);
+			if (invocationNode is InvocationExpressionSyntax syntax)
+			{
+				ProcessXunitSingle(syntax, semanticModel, context, method);
+
+			}
 		}
 	}
 
-	private static void ProcessXunitSingle(SyntaxNode invocationNode, SemanticModel semanticModel,
-		IParameterSymbol collectionSymbol,
+	private static void ProcessXunitSingle(InvocationExpressionSyntax invocationNode, SemanticModel semanticModel,
 		OperationAnalysisContext context, IMethodSymbol method)
 	{
 		// todo: currently this only finds assignments to existing vars, not 'declaration and assignment' - need to rewrite or expand for that.
@@ -66,45 +68,65 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 		//		will have to do in both directions - first approaching from above -- if we don't find *any* calls to single above, then we iterate over after, looking for calls to single(). If we find one, we enter the mode of checking for changes to the collection. If we find a change, we go back to looking for calls to single(). If we find none before hitting our current node again (call to xunit.single), we start looking for calls to linq.single(). If we hit a collection changing method, we return.
 		// YUK!  but that's the best algo i can think of
 
-		
+		var containingBlock = invocationNode
+			.Ancestors()
+			.OfType<BlockSyntax>()
+			.First();
+
+		var argumentToSingle = invocationNode.ArgumentList.Arguments.FirstOrDefault();
+		if (argumentToSingle is null)
+		{
+			return;
+		}
+		var argumentSymbol =
+			semanticModel.GetSymbolInfo(argumentToSingle.Expression).Symbol;
+		if (argumentSymbol is null)
+		{
+			return;
+		}
+
 		// could be improved, but currently just gets the nearest reference to the same collection
-		var nearestReferenceToReplacementCandidate = invocationNode
-				.Ancestors()
-				.OfType<BlockSyntax>()
-				.First() // we just want to find references within the containing scope
-				.ChildNodes()
-				.OfType<ExpressionStatementSyntax>()
-				.Select(syntax => syntax.Expression)
-				.OfType<AssignmentExpressionSyntax>()
-				.FirstOrDefault(syntax =>
-				{
-					var symbol = semanticModel.GetSymbolInfo(syntax.Right).Symbol;
-					if (symbol is IMethodSymbol methodSymbol) {
-						var fullMethodName = methodSymbol.ReducedFrom?.ToDisplayString();
-							if (fullMethodName is null) return false;
-							if (fullMethodName == (string?)XunitMethodToReplacementCandidates[Constants.Asserts.Single])
-							{
-								return ((InvocationExpressionSyntax)syntax.Right).Expression.ChildNodes()
-									.Any(node => SymbolEqualityComparer.Default.Equals(semanticModel.GetSymbolInfo(node).Symbol, collectionSymbol)); // if we have found a call to Linq's single, then check that one of the operands is the same collection
-								// todo: these two symbols are not the same - what's a better way of comparing them? 
-							} 
-					}
+		var referencesToReplacementCandidates = invocationNode
+			.Ancestors()
+			.OfType<BlockSyntax>()
+			.First() // we just want to find references within the containing scope
+			.ChildNodes() // all sibling assignment expressions
+			.OfType<ExpressionStatementSyntax>()
+			.Select(syntax => syntax.Expression)
+			.OfType<
+				AssignmentExpressionSyntax>() // only want cases where something is being assigned (TODO this only gets assignment to existing var (rather than to initialise and assign)
+			.Where(syntax =>
+			{
+				var symbol = semanticModel.GetSymbolInfo(syntax.Right).Symbol;
+				if (symbol is not IMethodSymbol methodSymbol) return false;
+				var fullMethodName = methodSymbol.ReducedFrom?.ToDisplayString();
+				if (fullMethodName is null) return false;
+				if (fullMethodName != (string?)XunitMethodToReplacementCandidates[Constants.Asserts.Single])
 					return false;
-				})
-			;
-		// couldn't find any bad usages of 
-		if (nearestReferenceToReplacementCandidate is null)
+				if (syntax.Right is not InvocationExpressionSyntax linqSingleInvocation ||
+				    linqSingleInvocation.Expression is not MemberAccessExpressionSyntax
+					    linqSingleMemberAccessExpression) return false;
+				
+				// expression property of member access is the object the member belongs to
+				var nodeSymbol = semanticModel.GetSymbolInfo(linqSingleMemberAccessExpression.Expression).Symbol;
+				if (nodeSymbol is null) return false;
+				return SymbolEqualityComparer.Default.Equals(
+					nodeSymbol, argumentSymbol);
+
+			}).ToList();
+		
+		if (referencesToReplacementCandidates.Count == 0)
 		{
 			return;
 		}
 		
 		
-		var symbol = semanticModel.GetSymbolInfo(nearestReferenceToReplacementCandidate.Right).Symbol;
+		var symbol = semanticModel.GetSymbolInfo(referencesToReplacementCandidates.First().Right).Symbol;
 		if (symbol != null)
 			context.ReportDiagnostic(
 				Diagnostic.Create(
 					Descriptors.X2030_AssertsWithReturnValuesShouldBeUsedForAssigment,
-					nearestReferenceToReplacementCandidate.GetLocation(),
+					referencesToReplacementCandidates.First().GetLocation(),
 					SymbolDisplay.ToDisplayString(
 						method,
 						SymbolDisplayFormat
