@@ -22,7 +22,7 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 	};
 
 	// map xunit methods to the extension methods that they can replace
-	private static readonly Hashtable XunitMethodToReplacementCandidates = new()
+	private static readonly Dictionary<string, string> XunitMethodToReplacementCandidates = new()
 	{
 		{Constants.Asserts.Single, "System.Linq.Enumerable.Single<TSource>(System.Collections.Generic.IEnumerable<TSource>)"}
 	};
@@ -57,8 +57,6 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 	private static void ProcessXunitSingle(InvocationExpressionSyntax invocationNode, SemanticModel semanticModel,
 		OperationAnalysisContext context, IMethodSymbol method)
 	{
-		// todo: currently this only finds assignments to existing vars, not 'declaration and assignment' - need to rewrite or expand for that.
-
 		// clean 'steps':
 		// find all references to the parameter to xunit.single (in this case 'collection').
 		// find all those references in which that parameter is being used as part of a call to "System.Linq.Enumerable.Single"
@@ -67,62 +65,62 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 		//		then iterating over, finding those that refer to collection symbol - and if we hit any that edit the collection (calls to add, delete etc.), we return. keep going until we find the one which makes a call to Linq.Enumerable.Single() - then we exit with that as our replacement candidate.
 		//		will have to do in both directions - first approaching from above -- if we don't find *any* calls to single above, then we iterate over after, looking for calls to single(). If we find one, we enter the mode of checking for changes to the collection. If we find a change, we go back to looking for calls to single(). If we find none before hitting our current node again (call to xunit.single), we start looking for calls to linq.single(). If we hit a collection changing method, we return.
 		// YUK!  but that's the best algo i can think of
-
-		var containingBlock = invocationNode
-			.Ancestors()
-			.OfType<BlockSyntax>()
-			.First();
+		
+		//WORKING:
+		// can find all invocation nodes that call IEnumerable.Single() within a block
+		// now need to find places where the collection is written to or modified - we don't want to 
+		// trigger on places that are before or after a write to the list
 
 		var argumentToSingle = invocationNode.ArgumentList.Arguments.FirstOrDefault();
 		if (argumentToSingle is null)
 		{
 			return;
 		}
-		var argumentSymbol =
-			semanticModel.GetSymbolInfo(argumentToSingle.Expression).Symbol;
+		var argumentSymbol = semanticModel.GetSymbolInfo(argumentToSingle.Expression).Symbol;
 		if (argumentSymbol is null)
 		{
 			return;
 		}
 
-		// could be improved, but currently just gets the nearest reference to the same collection
-		var referencesToReplacementCandidates = invocationNode
-			.Ancestors()
-			.OfType<BlockSyntax>()
-			.First() // we just want to find references within the containing scope
-			.ChildNodes() // all sibling assignment expressions
-			.OfType<ExpressionStatementSyntax>()
-			.Select(syntax => syntax.Expression)
-			.OfType<
-				AssignmentExpressionSyntax>() // only want cases where something is being assigned (TODO this only gets assignment to existing var (rather than to initialise and assign)
-			.Where(syntax =>
-			{
-				var symbol = semanticModel.GetSymbolInfo(syntax.Right).Symbol;
-				if (symbol is not IMethodSymbol methodSymbol) return false;
-				var fullMethodName = methodSymbol.ReducedFrom?.ToDisplayString();
-				if (fullMethodName is null) return false;
-				if (fullMethodName != (string?)XunitMethodToReplacementCandidates[Constants.Asserts.Single])
-					return false;
-				if (syntax.Right is not InvocationExpressionSyntax linqSingleInvocation ||
-				    linqSingleInvocation.Expression is not MemberAccessExpressionSyntax
-					    linqSingleMemberAccessExpression) return false;
-				
-				// expression property of member access is the object the member belongs to
-				var nodeSymbol = semanticModel.GetSymbolInfo(linqSingleMemberAccessExpression.Expression).Symbol;
-				if (nodeSymbol is null) return false;
-				return SymbolEqualityComparer.Default.Equals(
-					nodeSymbol, argumentSymbol);
-
-			}).ToList();
+		var containingBlock = GetContainingBlock(invocationNode);
+		var invocationExpressions = containingBlock.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
 		
-		if (referencesToReplacementCandidates.Count == 0)
+		if (invocationExpressions.Count == 0)
 		{
 			return;
 		}
 
-		foreach (var assignmentToCollection in referencesToReplacementCandidates)
+		var callsToLinqSingle = containingBlock.DescendantNodes() //here
+				.OfType<InvocationExpressionSyntax>().ToList()
+				.Select(x => x.Expression)
+				.OfType<MemberAccessExpressionSyntax>() // to here is candidate for method
+				.Where(x =>
+				{ // and here
+					var symbol = semanticModel.GetSymbolInfo(x).Symbol;
+					if (symbol is not IMethodSymbol methodSymbol || methodSymbol.ReducedFrom is null)
+					{
+						return false;
+					}
+					return methodSymbol.ReducedFrom.ToDisplayString() ==
+					       XunitMethodToReplacementCandidates[Constants.Asserts.Single]; 
+				}) 
+				.Where(x =>
+				{
+					var nodeSymbol = semanticModel.GetSymbolInfo(x.Expression).Symbol;
+					if (nodeSymbol is null) return false;
+					return SymbolEqualityComparer.Default.Equals(
+						nodeSymbol, argumentSymbol);
+				}).ToList() // to here obviously
+			;
+		
+		if (callsToLinqSingle.Count == 0)
 		{
-			var symbol = semanticModel.GetSymbolInfo(assignmentToCollection.Right).Symbol;
+			return;
+		}
+
+		foreach (var assignmentToCollection in callsToLinqSingle)
+		{
+			var symbol = semanticModel.GetSymbolInfo(assignmentToCollection).Symbol;
 			if (symbol != null)
 			{
 				context.ReportDiagnostic(
@@ -142,5 +140,17 @@ public class AssertsWithReturnValuesShouldBeUsedForAssignment : AssertUsageAnaly
 			}
 		}
 	}
+	
+	# region utility
+	
+	private static BlockSyntax GetContainingBlock(SyntaxNode node)
+	{
+		return node
+			.Ancestors()
+			.OfType<BlockSyntax>()
+			.First();
+	}
+	
+	# endregion
 
 }

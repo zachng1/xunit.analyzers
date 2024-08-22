@@ -17,9 +17,8 @@ using System.Linq;
 
 class TestClass {
 	void TestMethod() {
-		List<int> list;
 		int item;
-		list = new List<int> {1};
+		List<int> list = new List<int> {1};
 		Xunit.Assert.Single(list);
 		item = list.Single(); 
 	}
@@ -29,7 +28,34 @@ class TestClass {
 		{
 			Verify
 				.Diagnostic()
-				.WithSpan(11, 3, 11, 23)
+				.WithSpan(10, 3, 10, 23)
+				.WithSeverity(DiagnosticSeverity.Info)
+				.WithArguments("IEnumerable.Single()", Constants.Asserts.Single)
+		};
+		await Verify.VerifyAnalyzer(source, expected);
+	}
+	
+	[Fact]
+	public async Task AssertSingleFollowedByInitializeAndAssignment_Triggers()
+	{
+		var source = @"
+using System.Collections.Generic;
+using System.Linq;
+
+class TestClass {
+	void TestMethod() {
+		int test;
+		List<int> list = new List<int> {1};
+		Xunit.Assert.Single(list);
+		int item = list.Single(); 
+	}
+}
+		";
+		var expected = new[]
+		{
+			Verify
+				.Diagnostic()
+				.WithSpan(10, 3, 10, 23)
 				.WithSeverity(DiagnosticSeverity.Info)
 				.WithArguments("IEnumerable.Single()", Constants.Asserts.Single)
 		};
